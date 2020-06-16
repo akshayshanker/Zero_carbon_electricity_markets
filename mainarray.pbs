@@ -1,0 +1,13 @@
+#!/bin/bash
+#PBS -P kq62
+#PBS -q normal
+#PBS -l walltime=24:00:00
+#PBS -l mem=64GB
+#PBS -l ncpus=3
+#PBS -lstorage=scratch/kq62
+
+cd $HOME 
+cd spotmarkets 
+module load python3/3.7.4
+ 
+python3 main_pbs.py $PBS_ARRAY_INDEX
