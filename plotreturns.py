@@ -28,14 +28,14 @@ def plotreturns(varlist, varname):
     for var in varlist:
 
 
-        s_supply            = var if varname == 's_supply' else .15 
-        D_bar               = var if varname == 'D_bar' else 2.818
-        r_s                 = var if varname == 'r_s' else 465
-        r_k                 = var if varname == 'r_k' else 1400
+        s_supply            = var if varname == 's_supply' else .044
+        D_bar               = var if varname == 'D_bar' else 5.468
+        r_s                 = var if varname == 'r_s' else .465
+        r_k                 = var if varname == 'r_k' else 1.400
         zeta_storage        = var if varname == 'zeta_storage' else .5
         eta_demand          = var  if varname == 'eta_demand' else .3
-        mu_supply           = var   if varname == 'mu_supply' else 0.5
-        K                   = var  if varname == 'K' else 6.7/mu_supply
+        mu_supply           = var   if varname == 'mu_supply' else 0.34
+        K                   = var  if varname == 'K' else 39.8/mu_supply
 
         og = EmarketModel(s_supply          = s_supply,         #standard deviation of supply 
                             grid_size       = 100,   #grid size of storage grid
@@ -78,7 +78,7 @@ def plotreturns(varlist, varname):
 
         G_star          = lambda S_bar:  G(K_init, S_bar, tol_TC, tol_pi)
 
-        S_range        =    np.linspace(.01, 75, 40)
+        S_range        =    np.linspace(.01, 100, 50)
 
         returns         = np.zeros(len(S_range))
 
@@ -92,7 +92,7 @@ def plotreturns(varlist, varname):
         
         plt.plot(S_range, np.log(returns))
 
-    plt.axhline(y = np.log(465)) 
+    plt.axhline(y = np.log(r_s)) 
 
     leglist = [ '{}= {}'.format(varname, x) for x in varlist ]
     leglist.append('Current price (USD 465 M/GwH)')
@@ -101,7 +101,7 @@ def plotreturns(varlist, varname):
     plt.ylabel('Log marginal return (USD Million/GwH)')
     plt.xlabel('Storage capacity (GwH)')
 
-    plt.savefig('returns_vary_{}.png'.format(varname))
+    plt.savefig('returns_vary_{}_e3.png'.format(varname))
 
     return returns_dict
 
@@ -114,8 +114,8 @@ if __name__ == '__main__':
 
 
 
-   varlist = [.05,.1, .2, .3]
-   varname = 's_supply'
+   varlist = [10, 20,30,40, 50,60, 70,80]
+   varname = 'K'
    returns_dict =plotreturns(varlist, varname)
    pickle.dump(returns_dict, open("/scratch/kq62/returns_{}.ret".format(varname),"wb"))
 

@@ -37,10 +37,10 @@ if __name__ == '__main__':
                         grid_size       = 100,   #grid size of storage grid
                         grid_max_x      = 100,   #initial max storge (this is redundant)
                         D_bar           = 2.818,       #demand parameter D_bar
-                        r_s             = 465,          #cost of storage capital (Billion USD/GwH).  Set basecase to 465
-                        r_k             = 1400,         #cost of generation capital (Billion USD/Gw). Set base case to 1400
+                        r_s             = .465*1E9,          #cost of storage capital (USD/GwH).  Set basecase to 465
+                        r_k             = 1.4*1E9,         #cost of generation capital (Billion USD/Gw). Set base case to 1400
                         grid_size_s     = 10,     #number of supply shocks
-                        grid_size_d     = 3,    #number of demand shocks
+                        grid_size_d     = 5,    #number of demand shocks
                         zeta_storage    = .5,  # Base case is .5
                         eta_demand      = .5,
                         mu_supply       = 0.5

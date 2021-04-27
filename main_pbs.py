@@ -32,26 +32,27 @@ from numpy import genfromtxt
 if __name__ == '__main__':
 
     index = int(sys.argv[1])
-    array = genfromtxt('array_6.csv', delimiter=',')[1:]      
+    array = genfromtxt('Settings/array_6.csv', delimiter=',')[1:]      
     parameters = array[index]
 
     print(parameters)
   
-    og = EmarketModel(s_supply      = parameters[0],         #standard deviation of supply 
-                        grid_size   = 150,                #grid size of storage grid
-                        grid_max_x  = 100,               #initial max storge (this is redundant)
-                        D_bar       = .344,                   #demand parameter D_bar
-                        r_s         = parameters[1],            #cost of storage capital (Billion USD/GwH).  Set basecase to 465
-                        r_k         = parameters[2],            #cost of generation capital (Billion USD/Gw). Set base case to 1400
-                        grid_size_s = 15,               #number of supply shocks
-                        grid_size_d = 3,                #number of demand shocks
-                        zeta_storage = parameters[3],   # Base case is .5
-                        eta_demand   = .1
+    og = EmarketModel(s_supply       = parameters[1],    #variance deviation of supply 
+                        mu_supply    = parameters[0],
+                        grid_size    = 150,              #grid size of storage grid
+                        grid_max_x   = 100,              #initial max storge (this is redundant)
+                        D_bar        = parameters[6],    #demand parameter D_bar
+                        r_s          = parameters[2]*1E9,    #cost of storage capital (USD/GwH).  Set basecase to 465
+                        r_k          = parameters[3]*1E9,    #cost of generation capital (USD/Gw). Set base case to 1400
+                        grid_size_s  = 15,               #number of supply shocks
+                        grid_size_d  = 5,                #number of demand shocks
+                        zeta_storage = parameters[4],   # Base case is .5
+                        eta_demand   = parameters[5]
                         
                     )
 
     
-    K_init                  = 6.7/np.inner(og.P_supply, og.X_supply[0:og.grid_size_s]) #exogenous level of capital stock 
+    K_init                  = 39.8/np.inner(og.P_supply, og.X_supply[0:og.grid_size_s]) #exogenous level of capital stock 
 
     
     GF_star, TC_star, G, F  = time_operator_factory(og) #import functions
@@ -77,7 +78,7 @@ if __name__ == '__main__':
     start           = time.time()
 
     G_star          = lambda S_bar:  G(K_init, S_bar, tol_TC, tol_pi)
-    S_bar_star      = brentq(G_star, 1e-1, 2500, xtol = tol_brent)
+    S_bar_star      = brentq(G_star, 1e-10, 2500, xtol = tol_brent)
     
     rho_star        = TC_star(config.rho_global_old ,K_init, S_bar_star, tol_TC, config.grid)
 
@@ -90,12 +91,12 @@ if __name__ == '__main__':
     og.time_exog    = end-start 
 
 
-    pickle.dump(og, open("/scratch/kq62/array_6_{}.mod".format(sys.argv[1]),"wb"))
+    pickle.dump(og, open("/scratch/kq62/array_6a_{}.mod".format(sys.argv[1]),"wb"))
 
     
 
     """
-    Run model with endogenous stock of capital. Save as model a_prime
+    Run model with endogenous stock of capital. 
     """
     
     config.toggle_GF =0
@@ -116,7 +117,7 @@ if __name__ == '__main__':
     og.time_endog = end-start 
 
 
-    pickle.dump(og, open("/scratch/kq62/array_6_{}_endog.mod".format(sys.argv[1]),"wb"))
+    pickle.dump(og, open("/scratch/kq62/array_6a_{}_endog.mod".format(sys.argv[1]),"wb"))
 
 
 

@@ -99,6 +99,7 @@ class EmarketModel:
                  grid_min_s = 1e-100, 
                  mu_supply = 0.291,
                  s_supply = 0.0286,
+                 grid_max_x = 100, 
                  mu_demand = .5,
                  s_demand = .15, 
                  grid_size = 100,
@@ -189,7 +190,7 @@ class EmarketModel:
         self.grid_size_s, self.grid_size_d    = grid_size_s\
                                                 ,grid_size_d  
 
-       
+        self.grid =  np.linspace(grid_min_s,grid_max_x, grid_size)
         # alpha and beta parameters for beta distribution of supply
 
         self.mu_supply, self.s_supply, self.mu_demand, self.mu_supply\
@@ -205,7 +206,7 @@ class EmarketModel:
 
         # generate PMFs for supply and demand shocks 
 
-        self.demand_shocks =  np.genfromtxt('errors_demand.csv', delimiter=',')
+        self.demand_shocks =  np.genfromtxt('Settings/errors_demand.csv', delimiter=',')
 
         X_supply_prime     =  np.linspace(0, 1, self.grid_size_s+1)
         self.P_supply      =  np.diff(stats.beta.cdf(X_supply_prime, self.alpha, self.iota))
@@ -691,7 +692,7 @@ def time_operator_factory(og, parallel_flag=True):
         
         # calc optimal first stage storage capital given K
         if config.toggle_GF==0:
-            S_star = brentq(G_star, 1, 500, xtol = tol_brent_1) 
+            S_star = brentq(G_star, 1e-10, 500, xtol = tol_brent_1) 
         
         if config.toggle_GF==1:
             S_star = brentq(G_star, config.S_bar_star*.8, config.S_bar_star*1.2, xtol = tol_brent) # calc optimal first stage storage capital given K
@@ -700,7 +701,7 @@ def time_operator_factory(og, parallel_flag=True):
         # define function whose zero is the optimal first gen storage capital given store cap.
         F_star= lambda K:  F(K, S_star, tol_TC)
         if config.toggle_GF==0:
-            K_star = brentq(F_star, 1, 500, xtol = tol_brent_1) # calc optimal first stage gen capital given S_bar
+            K_star = brentq(F_star, 1e-10, 500, xtol = tol_brent_1) # calc optimal first stage gen capital given S_bar
         if config.toggle_GF==1: 
             K_star = brentq(F_star, config.K_star*.8, config.K_star*1.2, xtol = tol_brent) # calc optimal first stage gen capital given S_bar
 
