@@ -50,8 +50,8 @@ def tabulate_storage(modlist, filename):
 if __name__ == '__main__':
 
 	modlist = ['baseline', 'baseline_endog']
-	#for i in range(7):
-	#	modlist.append('array_6_{}'.format(i))
+	for i in range(7):
+		modlist.append('array_6_{}'.format(i))
 
 	tabulate_storage(modlist, 'calib')
 

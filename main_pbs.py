@@ -30,8 +30,10 @@ from numpy import genfromtxt
 
 
 if __name__ == '__main__':
+    from mpi4py import MPI as MPI4py
+    world = MPI4py.COMM_WORLD
 
-    index = int(sys.argv[1])
+    index = int(world.Get_rank())
     array = genfromtxt('Settings/array_6.csv', delimiter=',')[1:]      
     parameters = array[index]
 
@@ -39,12 +41,12 @@ if __name__ == '__main__':
   
     og = EmarketModel(s_supply       = parameters[1],    #variance deviation of supply 
                         mu_supply    = parameters[0],
-                        grid_size    = 150,              #grid size of storage grid
+                        grid_size    = 100,              #grid size of storage grid
                         grid_max_x   = 100,              #initial max storge (this is redundant)
                         D_bar        = parameters[6],    #demand parameter D_bar
                         r_s          = parameters[2]*1E9,    #cost of storage capital (USD/GwH).  Set basecase to 465
                         r_k          = parameters[3]*1E9,    #cost of generation capital (USD/Gw). Set base case to 1400
-                        grid_size_s  = 15,               #number of supply shocks
+                        grid_size_s  = 10,               #number of supply shocks
                         grid_size_d  = 5,                #number of demand shocks
                         zeta_storage = parameters[4],   # Base case is .5
                         eta_demand   = parameters[5]
@@ -78,7 +80,7 @@ if __name__ == '__main__':
     start           = time.time()
 
     G_star          = lambda S_bar:  G(K_init, S_bar, tol_TC, tol_pi)
-    S_bar_star      = brentq(G_star, 1e-10, 2500, xtol = tol_brent)
+    S_bar_star      = brentq(G_star, 1e-10, 2000, xtol = tol_brent)
     
     rho_star        = TC_star(config.rho_global_old ,K_init, S_bar_star, tol_TC, config.grid)
 
@@ -91,9 +93,8 @@ if __name__ == '__main__':
     og.time_exog    = end-start 
 
 
-    pickle.dump(og, open("/scratch/kq62/array_6a_{}.mod".format(sys.argv[1]),"wb"))
+    pickle.dump(og, open("/scratch/kq62/array_6a_{}.mod".format(index),"wb"))
 
-    
 
     """
     Run model with endogenous stock of capital. 
@@ -117,7 +118,7 @@ if __name__ == '__main__':
     og.time_endog = end-start 
 
 
-    pickle.dump(og, open("/scratch/kq62/array_6a_{}_endog.mod".format(sys.argv[1]),"wb"))
+    pickle.dump(og, open("/scratch/kq62/array_6a_{}_endog.mod".format(index),"wb"))
 
 
 

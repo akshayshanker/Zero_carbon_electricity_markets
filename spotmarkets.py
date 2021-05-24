@@ -27,7 +27,6 @@ import matplotlib.pyplot as plt
 from itertools import product
 from numba import njit, prange, jit
 
-from pathos.pools import ProcessPool 
 from fixedpoint import fixed_point
 from sklearn.utils.extmath import cartesian
 from scipy.optimize import broyden1
@@ -36,7 +35,6 @@ from scipy.optimize import fsolve
 import config
 import time
 from scipy import stats
-import ray
 
 
 from interpolation import interp
@@ -282,8 +280,6 @@ def time_operator_factory(og, parallel_flag=True):
 
     D_bar                                   = og.D_bar
 
-    Pool_1 = ProcessPool()
-    Pool_G = ProcessPool()
 
     eta_demand                              = og.eta_demand
 
@@ -692,18 +688,18 @@ def time_operator_factory(og, parallel_flag=True):
         
         # calc optimal first stage storage capital given K
         if config.toggle_GF==0:
-            S_star = brentq(G_star, 1e-10, 500, xtol = tol_brent_1) 
+            S_star = brentq(G_star, 1e-10, 2000, xtol = tol_brent_1) 
         
         if config.toggle_GF==1:
-            S_star = brentq(G_star, config.S_bar_star*.8, config.S_bar_star*1.2, xtol = tol_brent) # calc optimal first stage storage capital given K
+            S_star = brentq(G_star, config.S_bar_star*.75, config.S_bar_star*1.25, xtol = tol_brent) # calc optimal first stage storage capital given K
         
 
         # define function whose zero is the optimal first gen storage capital given store cap.
         F_star= lambda K:  F(K, S_star, tol_TC)
         if config.toggle_GF==0:
-            K_star = brentq(F_star, 1e-10, 500, xtol = tol_brent_1) # calc optimal first stage gen capital given S_bar
+            K_star = brentq(F_star, 1e-10, 5000, xtol = tol_brent_1) # calc optimal first stage gen capital given S_bar
         if config.toggle_GF==1: 
-            K_star = brentq(F_star, config.K_star*.8, config.K_star*1.2, xtol = tol_brent) # calc optimal first stage gen capital given S_bar
+            K_star = brentq(F_star, config.K_star*.75, config.K_star*1.25, xtol = tol_brent) # calc optimal first stage gen capital given S_bar
 
         if abs(K-K_star)<2:
             config.toggle_GF=1

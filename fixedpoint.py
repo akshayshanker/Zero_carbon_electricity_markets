@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def fixed_point(T,v_init, error_flag =1, tol = 1e-5, error_name = "unnamed", maxiter = np.inf):
+def fixed_point(T,v_init, error_flag =1, tol = 1e-5, error_name = "unnamed", maxiter = 500):
     error = 1
     iterno = 1
     v = v_init

@@ -28,13 +28,13 @@ def plotreturns(varlist, varname):
     for var in varlist:
 
 
-        s_supply            = var if varname == 's_supply' else .044
-        D_bar               = var if varname == 'D_bar' else 5.468
-        r_s                 = var if varname == 'r_s' else .465
-        r_k                 = var if varname == 'r_k' else 1.400
-        zeta_storage        = var if varname == 'zeta_storage' else .5
+        s_supply            = var if varname == 's_supply' else .11
+        D_bar               = var if varname == 'D_bar' else 80
+        r_s                 = var if varname == 'r_s' else .475
+        r_k                 = var if varname == 'r_k' else 1.9
+        zeta_storage        = var if varname == 'zeta_storage' else .1
         eta_demand          = var  if varname == 'eta_demand' else .3
-        mu_supply           = var   if varname == 'mu_supply' else 0.34
+        mu_supply           = var  if varname == 'mu_supply' else 0.4
         K                   = var  if varname == 'K' else 39.8/mu_supply
 
         og = EmarketModel(s_supply          = s_supply,         #standard deviation of supply 
