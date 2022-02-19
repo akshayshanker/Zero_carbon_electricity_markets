@@ -38,12 +38,12 @@ def plotreturns(varlist, varname):
         K                   = var  if varname == 'K' else 39.8/mu_supply
 
         og = EmarketModel(s_supply          = s_supply,         #standard deviation of supply 
-                            grid_size       = 100,   #grid size of storage grid
+                            grid_size       = 150,   #grid size of storage grid
                             D_bar           = D_bar,       #demand parameter D_bar
                             r_s             = r_s,          #cost of storage capital (Billion USD/GwH).  Set basecase to 465
                             r_k             = r_k,         #cost of generation capital (Billion USD/Gw). Set base case to 1400
-                            grid_size_s     = 10,     #number of supply shocks
-                            grid_size_d     = 3,    #number of demand shocks
+                            grid_size_s     = 5,     #number of supply shocks
+                            grid_size_d     = 5,    #number of demand shocks
                             zeta_storage    = zeta_storage,  # Base case is .5
                             eta_demand      = eta_demand,
                             mu_supply       = mu_supply

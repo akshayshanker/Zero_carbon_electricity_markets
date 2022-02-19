@@ -8,36 +8,37 @@ from itertools import product
 from numba import njit, prange
 from pathos.multiprocessing import ProcessingPool
 from fixedpoint import fixed_point
-from results import runres
+from helpfuncs.results import runres
 import matplotlib.pyplot as plt
 import dill as pickle
 from tabulate import tabulate
+from numpy import genfromtxt
 
 
-def tabulate_storage(modlist, filename):
+def tabulate_storage(modlist, row_names,filename, model_name, sim_name):
 		
 	results = {}
 	table   = []
-	for key in modlist:
+	for key, rname in zip(modlist, row_names):
 		print("Calculating results from {}".format(key))
-		results[key] = runres("{}".format(key),1,4)
-		results_row  = ["key",\
+		results[key] = runres(model_name, sim_name,key, 1,4)
+		results_row  = [rname,\
 						"%.2f (%.2f)"%(results[key]['mean_generation'], results[key]['var_generation']), \
-						 results[key]['K'],results[key]["S_bar_star"],\
-						 "%.2f (%.2f)"%(results[key]['mean_price'], results[key]['var_price'] ),\
+						 "%.2f"%results[key]['K'],"%.2f"%results[key]["S_bar_star"],\
+						 "%.2f (%.2f)"%(results[key]['mean_price']*1e-3, results[key]['var_price']*1e-3 ),\
 						 "%.2f (%.2f)"%(results[key]['mean_demand'], results[key]['var_demand'] ),\
-						 "%.2f (%.2f)"%(results[key]['mean_stor'],results[key]['var_stor'] ),\
-						 results[key]['stockout']]
+						 "%.2f (%.2f)"%(results[key]['mean_stor'],results[key]['var_stor'] )]\
+						 #results[key]['stockout']]
 		table.append(results_row)
 
 	print(table)
 
-	header = ["Gen.", "S", "K", "Pr.", "Dem.", "Str.", "lowstor %"]
+	header = ["Av gen.", "Gen. cap.", "S cap.","Pr.", "Dem.", "Av str."]#, "lowstor %"]
 
 
 	print(tabulate(table, headers = header,  tablefmt="latex_booktabs", floatfmt=".2f"))
 	 
-	restab = open("results_tab_{}.tex".format(filename), 'w')
+	restab = open("Results/{}/results_tab.tex".format(model_name  + '/' + sim_name + '/'), 'w')
 
 	restab.write(tabulate(table, headers = header,  tablefmt="latex_booktabs", floatfmt=".2f"))
 
@@ -45,19 +46,55 @@ def tabulate_storage(modlist, filename):
 
 	return 
 
+def gen_arr_storage(modlist, row_names,filename):
+	results = {}
+	table_s   = []
+	table_k   = []
+	table_v = []
+	for key, rname in zip(modlist, row_names):
+		print("Calculating results from {}".format(key))
+		og = pickle.load(open("/scratch/kq62/main_v_2/baseline/{}.mod".format(key),"rb"))
+		table_s.append(og.S_bar_star)
+		table_k.append(og.K)
+		table_v.append(og.s_supply)
+
+	return table_s, table_k, table_v
 
 
 if __name__ == '__main__':
 
-	modlist = ['baseline', 'baseline_endog']
-	for i in range(7):
-		modlist.append('array_6_{}'.format(i))
 
-	tabulate_storage(modlist, 'calib')
+	array = genfromtxt('Settings/baseline.csv', delimiter=',')[1:] 
+
+	model_name = 'main_v_2'
+	sim_name = 'baseline_1'
+	settings_file = 'baseline_1'
+
+	array = genfromtxt('Settings/{}.csv'\
+			.format(settings_file), delimiter=',')[1:]
+
+	modlist = []
+	row_names = []
+
+	for i in range(len(array)):
+		modlist.append('{}_{}_endog'.format(sim_name,i))
+		row_names.append(array[i, -1])
+
+	#tabulate_storage(modlist, row_names, 'baselines', model_name, sim_name)
+
+	     
+	table_s, table_k, table_v =  gen_arr_storage(modlist, row_names,'calib')
+	plt.close()
+	plt.plot(table_v,table_s, label = 'Storage', color= 'red')
+	plt.plot(table_v,table_k, label = 'Capital', color= 'blue')
+	plt.xlabel('Variance of supply')
+	plt.legend()
+	plt.savefig('sotage_variance.png')
+
+
+
 
 """"
-
-
 
 table2 = [mod3, mod4, mod5]
 print(tabulate(table2, headers = header,  tablefmt="latex_booktabs", floatfmt=".2f"))

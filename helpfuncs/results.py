@@ -8,7 +8,7 @@ from itertools import product
 from numba import njit, prange,jit
 from pathos.multiprocessing import ProcessingPool
 from fixedpoint import fixed_point
-
+from pathlib import Path
 
 
 from interpolation.splines import UCGrid, CGrid, nodes, eval_linear
@@ -23,10 +23,10 @@ Unpacks model policy functions and convets to timeseries results and plots
 """
 
 
-def  runres(filein, resolve, tol_pi):
+def  runres(model_name, sim_name,key, resolve, tol_pi):
 
 
-	og = pickle.load(open("/scratch/kq62/{}.mod".format(filein),"rb"))
+	og = pickle.load(open("/scratch/kq62/{}.mod".format(model_name  + '/' + sim_name + '/' + key),"rb"))
 	beta, delta_storage, zeta_storage       = og.beta, og.delta_storage, og.zeta_storage
 	pr, p_inv                				= og.pr, og.p_inv
 	grid_size, grid_min_s, grid_size_s, grid_size_d = og.grid_size, og.grid_min_s, og.grid_size_s, og.grid_size_d
@@ -201,8 +201,12 @@ def  runres(filein, resolve, tol_pi):
 	axarr[1,1].set_ylabel('Generation (Gw)', fontsize = 10)
 	f.tight_layout()
 
+
+	Path("Results/{}/".format(model_name  + '/' + sim_name))\
+										.mkdir(parents=True, exist_ok=True)
+
 	
-	plt.savefig("/scratch/kq62/plots/{}_sim.png".format(filein))
+	plt.savefig("Results/{}_sim.png".format(model_name  + '/' + sim_name + '/' + key))
 
 	plt.close()
 
@@ -220,7 +224,7 @@ def  runres(filein, resolve, tol_pi):
 
 	f_2.tight_layout()
 
-	plt.savefig("/scratch/kq62/plots/{}_deltas.png".format(filein))
+	plt.savefig("Results/{}_deltas.png".format(model_name  + '/' + sim_name + '/' + key))
 
 	f_3, axrr_3= plt.subplots(og.grid_size_s, og.grid_size_d)
 	for i in range(0, og.grid_size_d):
@@ -230,7 +234,7 @@ def  runres(filein, resolve, tol_pi):
 
 	f_3.tight_layout()
 
-	plt.savefig("/scratch/kq62/plots/{}_price.png".format(filein))
+	plt.savefig("Results/{}_price.png".format(model_name  + '/' + sim_name + '/' + key))
 
 	return results
 
