@@ -31,7 +31,6 @@ from sklearn.utils.extmath import cartesian
 from scipy.optimize import broyden1
 from scipy.stats import truncnorm
 from scipy.optimize import fsolve
-from helpfuncs import config
 import time
 from scipy import stats
 from helpfuncs.helperfuncs import interp_as
@@ -106,9 +105,10 @@ class EmarketModel:
                  r_s=.01,
                  r_k=2,
                  D_bar=10,
-                 sol_func=np.array(0),
-                 TS_length=1E6,
-                 eta_demand=.5
+                 sol_func = np.array(0),
+                 TS_length = 1E7,
+                 eta_demand=.5,
+                 U = [],
                  ):
 
         # model parameters
@@ -173,8 +173,19 @@ class EmarketModel:
 
             return D_bar * np.exp(e) * (np.power(x, (-eta_demand)))
 
+        @njit 
+        def utility(e,x,D_bar):
+
+          """"
+          Utility function
+          """
+          theta = 1/eta_demand
+
+          return (D_bar ** theta) * (np.exp(theta*e)) * (x**(1-theta))
+
         self.pr = pr
         self.p_inv = p_inv
+        self.utility = utility
 
         # initialize grid sizes  and grid
 
@@ -238,6 +249,14 @@ class EmarketModel:
             "Supply shock mean is {} and standard deviation is {}".format(
                 mean, variance))
 
+        # supply and shocks for simulation
+        self.shock_index = np.arange(len(self.shock_X))
+        #self.shocks = np.random.choice(self.shock_index, int(self.TS_length), p=self.P)
+        self.shocks = np.empty(int(TS_length))
+
+        for i in range(int(TS_length)):
+          self.shocks[i]  = int(self.shock_index[np.searchsorted(np.cumsum(self.P), U[i])])
+
 
 def time_operator_factory(og, parallel_flag=True):
     """A function factory for building the first stage and second stage
@@ -288,9 +307,8 @@ def time_operator_factory(og, parallel_flag=True):
 
     eta_demand = og.eta_demand
 
-    # supply and shocks for simulation
-    shock_index = np.arange(len(shock_X))
-    shocks = np.random.choice(shock_index, int(og.TS_length), p=P)
+    shocks = og.shocks
+    shock_index = og.shock_index
 
     @njit
     def objective_price(c,
@@ -412,7 +430,7 @@ def time_operator_factory(og, parallel_flag=True):
                         S_bar,
                         grid))[0]
             else:
-                c_star = 1e-100
+                c_star = 1e-300
 
             return c_star
 
@@ -425,6 +443,7 @@ def time_operator_factory(og, parallel_flag=True):
 
         return rho_new
 
+    #@njit
     def TC_star(v_init, K, S_bar, tol, grid):
         """"
         Fixed point operator
@@ -449,16 +468,13 @@ def time_operator_factory(og, parallel_flag=True):
         """
 
         rho = v_init
-        rho_updated = fixed_point(
-            lambda v: T(
-                v,
-                K,
+        args = (K,
                 S_bar,
-                config.grid),
-            rho,
-            error_flag=0,
-            tol=1e-06,
-            error_name="pricing")
+                np.array(grid))
+        rho_updated = fixed_point(T,v_init, args = args,
+                                  error_flag=0,
+                                  tol=1e-06,
+                                  error_name = "pricing")
 
         return rho_updated
 
@@ -491,40 +507,39 @@ def time_operator_factory(og, parallel_flag=True):
         start = time.time()
 
         # set up new grid for updated S_bar
-        config.grid = np.linspace(grid_min_s, S_bar, grid_size)
+        grid = np.linspace(grid_min_s, S_bar, grid_size)
 
         # set up array of grid size for new initial price function
         # this v_init_one is here only a template
-        v_init_one = np.ones(config.grid.shape)
+        v_init_one = np.ones(grid.shape)
 
         v_init = np.tile(v_init_one, (grid_size_s * grid_size_d, 1))
 
         # set up interpolant of previous iterations price function
-        def v_init_func(
-            e,
-            s): return np.interp(
-            s,
-            config.grid_old,
-            config.rho_global_old[e])
+        #def v_init_func(
+        #    e,
+        #    s): return np.interp(
+        #    s,
+        #    grid_old,
+        #    rho_global_old[e])
 
         # interpolate previous pricing funciton on
         # new grid and set as new initial value
-        for i in range(grid_size_s * grid_size_d):
-            v_init[i] = v_init_func(i, config.grid)
+        #for i in range(grid_size_s * grid_size_d):
+         #   v_init[i] = v_init_func(i, grid)
 
         # fine the fixed point of the pricing operator
         start_rho = time.time()
         rho_star = TC_star(
-            v_init, K, S_bar, tol_TC, np.linspace(
-                grid_min_s, S_bar, grid_size))
+            v_init, K, S_bar, tol_TC, grid)
         end_rho = time.time()
 
         #print("rho_star took {} to solve".format(end_rho-start_rho))
 
-        config.rho_global_old = rho_star
+        #config.rho_global_old = rho_star
 
-        config.grid_old = config.grid
-        grid = config.grid
+        #config.grid_old = config.grid
+        #grid = config.grid
 
         PI_bar = np.zeros(TS_length - 1)
 
@@ -552,9 +567,9 @@ def time_operator_factory(og, parallel_flag=True):
         start_seq = time.time()
         for i in range(TS_length):
             priceT[i] = interp_as(
-                grid, rho_star[shocks[i]], np.array([s[i]]))[0]
-            d[i] = p_inv(shock_X[shocks[i], 1], priceT[i], D_bar)
-            gen[i] = shock_X[shocks[i], 0] * K
+                grid, rho_star[int(shocks[i])], np.array([s[i]]))[0]
+            d[i] = p_inv(shock_X[int(shocks[i]), 1], priceT[i], D_bar)
+            gen[i] = shock_X[int(shocks[i]), 0] * K
 
             if i < TS_length - 1:
                 s[i + 1] = nextstor(s[i], d[i], gen[i])
@@ -608,9 +623,9 @@ def time_operator_factory(og, parallel_flag=True):
         end = time.time()
         end_PI = time.time()
 
-        return (1 / (1 - beta)) * np.mean(PI_hat) - r_s  # , s, price, gen, d
+        return (1 / (1 - beta)) * np.mean(PI_hat) - r_s, rho_star
 
-    def F(K, S_bar, tol):
+    def F(K, S_bar, tol, rho_star):
         """
         Function that gives first stage profits - cost of
         generation capital for given level of storage capital
@@ -633,15 +648,15 @@ def time_operator_factory(og, parallel_flag=True):
 
         # initial guess of value function is pricing function saved from
         # previous evaluation of G operator
-        v_init = config.rho_global_old
+        #v_init = config.rho_global_old
 
         # set-up grid based on value of S_nar
-        config.grid = np.linspace(grid_min_s, S_bar, grid_size)
+        grid = np.linspace(grid_min_s, S_bar, grid_size)
 
         # calculate pricing function
         #rho_star                = TC_star(v_init,K, S_bar, tol, config.grid)
         #config.rho_global_old   = rho_star
-        rho_star = config.rho_global_old
+        #rho_star = config.rho_global_old
 
         s = np.zeros(TS_length)
         priceT = np.zeros(TS_length)
@@ -655,10 +670,10 @@ def time_operator_factory(og, parallel_flag=True):
         z = np.zeros(TS_length)
 
         for i in range(TS_length):
-            zi = shock_X[shocks[i], 0]
-            ei = shock_X[shocks[i], 1]
+            zi = shock_X[int(shocks[i]), 0]
+            ei = shock_X[int(shocks[i]), 1]
 
-            priceT[i] = max(0, interp(config.grid, rho_star[shocks[i]], s[i]))
+            priceT[i] = max(0, interp(grid, rho_star[int(shocks[i])], s[i]))
             d[i] = p_inv(ei, priceT[i], D_bar)
             gen[i] = zi * K
             if i < TS_length - 1:
@@ -743,7 +758,7 @@ def time_operator_factory(og, parallel_flag=True):
         config.K_star = K_star
         return K_star
 
-    def GF_RMSE(S, K, tol_TC, tol_pi):
+    def GF_RMSE(K, S, tol_TC, tol_pi):
         """
         Returns RMSE of first stage profit/loss for storage
         and generation
@@ -765,8 +780,8 @@ def time_operator_factory(og, parallel_flag=True):
 
         """
 
-        stor_pnl = G(K, S, tol_TC, tol_pi)
-        gen_pn = F(K, S, tol_TC)
+        stor_pnl, rho_star = G(K, S, tol_TC, tol_pi)
+        gen_pn = F(K, S, tol_TC, rho_star)
 
         return np.sqrt(stor_pnl**2 + gen_pn**2)
 

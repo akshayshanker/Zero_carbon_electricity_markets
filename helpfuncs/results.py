@@ -7,14 +7,12 @@ import matplotlib.pyplot as plt
 from itertools import product
 from numba import njit, prange,jit
 from pathos.multiprocessing import ProcessingPool
-from fixedpoint import fixed_point
 from pathlib import Path
 
 
 from interpolation.splines import UCGrid, CGrid, nodes, eval_linear
 
 import dill as pickle
-import config
 
 
 
@@ -23,7 +21,7 @@ Unpacks model policy functions and convets to timeseries results and plots
 """
 
 
-def  runres(model_name, sim_name,key, resolve, tol_pi):
+def  runres(model_name, sim_name,key, resolve, tol_pi, plot= True):
 
 
 	og = pickle.load(open("/scratch/kq62/{}.mod".format(model_name  + '/' + sim_name + '/' + key),"rb"))
@@ -39,6 +37,15 @@ def  runres(model_name, sim_name,key, resolve, tol_pi):
 	D_bar                                   = og.D_bar
 	eta_demand                              = og.eta_demand
 
+	@njit 
+	def utility(e,x,D_bar):
+
+		""""
+		Utility function
+		"""
+		theta = 1/eta_demand
+
+		return (D_bar ** theta) * (np.exp(theta*e)) * (x**(1-theta))
 
 	K = og.K
 	S_bar = og.S_bar_star
@@ -69,7 +76,7 @@ def  runres(model_name, sim_name,key, resolve, tol_pi):
 
 	shock_index = np.arange(len(shock_X))
 	np.random.seed(30)
-	shocks = np.random.choice(shock_index, T, p=P)
+	shocks = og.shocks
 	s[0] = S_bar/2
 	s_eqm[0] = S_bar/2
 
@@ -100,7 +107,9 @@ def  runres(model_name, sim_name,key, resolve, tol_pi):
 	# generate storage price
 
 	rang = np.arange(T-1)
-	pool_two = ProcessingPool()
+	#pool_two = ProcessingPool()
+	PI_hat = np.empty(len(rang))
+	U_hat = np.empty(len(rang)) 
 
 	@njit
 	def return_pi(DS, S1, PI_bar):
@@ -125,9 +134,20 @@ def  runres(model_name, sim_name,key, resolve, tol_pi):
 		PI_hat = return_pi(DS,s[i+1], PI_bar)
 		return  max([0,PI_hat])
 
-	PI_hat = np.array(pool_two.map(T2, rang))
+	@njit 
+	def return_u(i):
+		return utility(e[i],d[i], D_bar)
 
-	print(np.mean(PI_hat)*(1/(1-beta)))
+	for i in rang:
+		PI_hat[i] = T2(i)
+		U_hat[i] = return_u(i)
+
+
+
+
+	#PI_hat = np.array(pool_two.map(T2, rang))
+
+	#print(np.mean(PI_hat)*(1/(1-beta)))
 
 	results = {}
 
@@ -142,7 +162,7 @@ def  runres(model_name, sim_name,key, resolve, tol_pi):
 	results['model'] = og
 	results['mean_price'] = np.mean(price)
 	results['mean_stor'] = np.mean(s)
-	results['mean_demand'] = np.mean(d[list(np.where(d<1000))])
+	results['mean_demand'] = np.mean(d[np.where(d<1000)])
 	results['mean_supply'] = np.mean(z)
 	results['mean_generation'] = np.mean(gen)
 
@@ -164,7 +184,8 @@ def  runres(model_name, sim_name,key, resolve, tol_pi):
 	results['stored_eqm'] = s_eqm
 	results['demshock'] = e
 	results['stockout'] =  np.isclose(s,og.grid_min_s, 1e-3).sum()/T
-	results['PI_hat'] = np.mean(PI_hat)
+	results['PI_hat'] = (1 / (1 - beta)) * np.mean(PI_hat)
+	results['WF'] =  (1 / (1 - beta)) * np.mean(U_hat) - r_s*S_bar - r_k*og.K
 
 
 
@@ -190,51 +211,56 @@ def  runres(model_name, sim_name,key, resolve, tol_pi):
 
 	integrand[i] = rho_func(shocks[i], s[i])*z[i]
 
-	f, axarr = plt.subplots(2,2)
-	axarr[0,0].plot(time, price,  linewidth=.6)
-	axarr[0,0].set_ylabel('Price (MUSD)', fontsize = 10)
-	axarr[1,0].plot(time, d,  linewidth=.6)
-	axarr[1,0].set_ylabel('Eqm. demand (Gw)', fontsize = 10)
-	axarr[0,1].plot(time, s,  linewidth=.6)
-	axarr[0,1].set_ylabel('Stored power (GwH)', fontsize = 10)
-	axarr[1,1].plot(time, gen,  linewidth=.6)
-	axarr[1,1].set_ylabel('Generation (Gw)', fontsize = 10)
-	f.tight_layout()
+	if plot == True:
+		f, axarr = plt.subplots(2,2)
+		axarr[0,0].plot(time, price,  linewidth=.6)
+		axarr[0,0].set_ylabel('Price (MUSD)', fontsize = 10)
+		axarr[1,0].plot(time, d,  linewidth=.6)
+		axarr[1,0].set_ylabel('Eqm. demand (Gw)', fontsize = 10)
+		axarr[0,1].plot(time, s,  linewidth=.6)
+		axarr[0,1].set_ylabel('Stored power (GwH)', fontsize = 10)
+		axarr[1,1].plot(time, gen,  linewidth=.6)
+		axarr[1,1].set_ylabel('Generation (Gw)', fontsize = 10)
+		f.tight_layout()
 
 
-	Path("Results/{}/".format(model_name  + '/' + sim_name))\
-										.mkdir(parents=True, exist_ok=True)
+		Path("Results/{}/".format(model_name  + '/' + sim_name))\
+											.mkdir(parents=True, exist_ok=True)
 
-	
-	plt.savefig("Results/{}_sim.png".format(model_name  + '/' + sim_name + '/' + key))
+		
+		plt.savefig("Results/{}_sim.png".format(model_name  + '/' + sim_name + '/' + key))
 
-	plt.close()
+		plt.close()
 
-	grid_S = np.linspace(og.grid_min_s, S_bar, 500)
+		grid_S = np.linspace(og.grid_min_s, S_bar, 500)
 
-	shock_index2 = shock_index.reshape(og.grid_size_s,og.grid_size_d)
+		shock_index2 = shock_index.reshape(og.grid_size_s,og.grid_size_d)
 
-	f_2, axrr_2= plt.subplots(og.grid_size_s, og.grid_size_d)
-	for i in range(0, og.grid_size_d):
-		for j in range(0, og.grid_size_s):
-			e = shock_index2[j,i]
-			axrr_2[j,i].plot(grid_S, delta_func(e,grid_S))
-			axrr_2[j,i].plot(grid_S, og.zeta_storage*np.ones(np.shape(grid_S))*S_bar)
-			axrr_2[j,i].plot(grid_S, -og.zeta_storage*np.ones(np.shape(grid_S))*S_bar)
+		f_2, axrr_2= plt.subplots(og.grid_size_s, og.grid_size_d)
+		for i in range(0, og.grid_size_d):
+			for j in range(0, og.grid_size_s):
+				e = shock_index2[j,i]
+				axrr_2[j,i].plot(grid_S, delta_func(e,grid_S))
+				axrr_2[j,i].plot(grid_S, og.zeta_storage*np.ones(np.shape(grid_S))*S_bar)
+				axrr_2[j,i].plot(grid_S, -og.zeta_storage*np.ones(np.shape(grid_S))*S_bar)
 
-	f_2.tight_layout()
+		f_2.tight_layout()
 
-	plt.savefig("Results/{}_deltas.png".format(model_name  + '/' + sim_name + '/' + key))
+		plt.savefig("Results/{}_deltas.png".format(model_name  + '/' + sim_name + '/' + key))
 
-	f_3, axrr_3= plt.subplots(og.grid_size_s, og.grid_size_d)
-	for i in range(0, og.grid_size_d):
-		for j in range(0, og.grid_size_s):
-			e = shock_index2[j,i]
-			axrr_3[j,i].plot(grid_S, rho_func(e,grid_S))
+		plt.close()
 
-	f_3.tight_layout()
+		f_3, axrr_3= plt.subplots(og.grid_size_s, og.grid_size_d)
+		for i in range(0, og.grid_size_d):
+			for j in range(0, og.grid_size_s):
+				e = shock_index2[j,i]
+				axrr_3[j,i].plot(grid_S, rho_func(e,grid_S))
 
-	plt.savefig("Results/{}_price.png".format(model_name  + '/' + sim_name + '/' + key))
+		f_3.tight_layout()
+
+		plt.savefig("Results/{}_price.png".format(model_name  + '/' + sim_name + '/' + key))
+
+		plt.close()
 
 	return results
 

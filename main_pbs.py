@@ -1,5 +1,3 @@
-
-  
 """
 Module solves array of Spotmarket models 
 Root finding for eqm. performed using Cross-Entropy method (see Kroese et al)
@@ -43,7 +41,6 @@ from numpy import genfromtxt
 import copy
 
 # Initialize demand shock 
-
 if __name__ == '__main__':
 
 	from mpi4py import MPI as MPI4py
@@ -51,33 +48,34 @@ if __name__ == '__main__':
 	world_size = world.Get_size()
 	world_rank = world.Get_rank()
 
-
 	# load array of parameter values for each model 
 	settings_file = sys.argv[1]
 	array = genfromtxt('Settings/{}.csv'\
 			.format(settings_file), delimiter=',')[1:]
 	model_name = 'main_v_2'
 	sim_name = sys.argv[2]
-	N = 96
-	N_elite = 6
+	N = 384
+	N_elite = 9
+
+	U = pickle.load(open("/scratch/kq62/{}/seed_u.pkl"\
+					.format(model_name),"rb"))
 	
 	# Now make the communicator classes 
 	# split len(array)*N cores across len(array) classes
 	# each layer 1 communicator class solves a paramterisation of the model 
 
 	block_size_layer_1 = int(N)
-
 	blocks_layer_1 = world_size/block_size_layer_1
 	color_layer_1 = int(world_rank/block_size_layer_1)
 	key_layer1 = int(world_rank%block_size_layer_1)
 	layer_1_comm = world.Split(color_layer_1,key_layer1)
 
 	if layer_1_comm.rank == 0:
-		parameters = array[color_layer_1]
+		parameters = array[int(color_layer_1)]
 		print(parameters)
 		og = EmarketModel(s_supply = parameters[1], #variance deviation of supply 
 							mu_supply = parameters[0],
-							grid_size = 150, #grid size of storage grid
+							grid_size = 100, #grid size of storage grid
 							grid_max_x = 100, #initial max storge (redundant)
 							D_bar = parameters[6], #demand parameter D_bar
 							r_s = parameters[2]*1E9,#cost str cap (USD/GwH)
@@ -85,22 +83,21 @@ if __name__ == '__main__':
 							grid_size_s  = 5, #number of supply shocks
 							grid_size_d  = 5, #number of demand shocks
 							zeta_storage = parameters[4], # pipe constraint
-							eta_demand   = parameters[5] #demand elas.
-							
-						)
+							eta_demand   = parameters[5], #demand elas.
+							U = U)
 	else:
 		og = None 
 
 	og = layer_1_comm.bcast(og, root =0 )
 
-	# Import functions
+	# Import functions to generate first stage profits 
 	GF_RMSE, GF_star, TC_star, G, F  = time_operator_factory(og) 
 	
 	# Initial grid on config file 
-	config.grid_old  = og.grid 
+	#config.grid_old  = og.grid 
 	#Initialize initial value of initial price guess
-	config.rho_global_old  = np.tile(np.ones(og.grid_size)*100, (og.grid_size_s*og.grid_size_d,1)) 
-	config.S_init  = 200 
+	#config.rho_global_old  = np.tile(np.ones(og.grid_size)*100, (og.grid_size_s*og.grid_size_d,1)) 
+	#config.S_init  = 200 
 
 	# Set tolerances 
 	# tol for pricing function iteration 
@@ -116,15 +113,17 @@ if __name__ == '__main__':
 	max_iter_xe = 100
 	eta_b = 0.8
 
-	# Cross entropy meth0d 
+	# Cross entropy method
+
 	# set bounds for draws on each cpu
-	K_bounds = [1E-04,500]
-	s_bounds = [1E-04,500]
+	K_bounds = [1E-10,500]
+	s_bounds = [1E-10,500]
 
 	# Initialise empty variables
 	i = 0
 	mean_errors = 1
 	mean_errors_all = 1
+
 	# Initial uniform draw
 	K = np.random.uniform(K_bounds[0], K_bounds[1])
 	S = np.random.uniform(s_bounds[0], s_bounds[1])
@@ -141,17 +140,18 @@ if __name__ == '__main__':
 		if np.isnan(error):
 			error = 1e100
 
+		# Layer one waits till all draws computed 
 		layer_1_comm.Barrier()
 
+		# Gather list of RMSE and capital stocks on layer 1 head
 		indexed_errors = layer_1_comm.gather(error, root=0)
 		parameter_K = layer_1_comm.gather(K, root=0)
 		parameter_S = layer_1_comm.gather(S, root=0)
 
-
 		if layer_1_comm.rank == 0:
 
-			#  params and errors
-			#  else, append i-1 errors and params and sort
+			#  sort K and S vals according to errors
+			#  else, append i-1 K and S vals and sort
 			if i == 0:
 				parameter_K_sorted = np.take(parameter_K,
 											 np.argsort(indexed_errors))
@@ -171,58 +171,68 @@ if __name__ == '__main__':
 													np.argsort(indexed_errors))
 				indexed_errors_sorted = np.sort(indexed_errors)
 
-
+			# Take the elite set 
 			elite_errors = indexed_errors_sorted[0: N_elite]
 			elite_K = parameter_K_sorted[0: N_elite]
 			elite_S = parameter_S_sorted[0: N_elite]
-
 			elite_vec = np.stack((elite_K, elite_S))
 
-			cov_matrix_new = np.cov(elite_vec, rowvar=True)
-			cov_matrix  = eta_b*cov_matrix_new + (1-eta_b)*cov_matrix
-			
+			# Smooth of i> 0
+			if i == 0:
+				eta_b1 = 0
+			else:
+				eta_b1 = eta_b
 
+			# Generate new covariance matrix from elite set 
+			# Next period draw from smoothing with previous cov matrix
+			cov_matrix_new = np.cov(elite_vec, rowvar=True)
+			cov_matrix  = eta_b1*cov_matrix_new + (1-eta_b1)*cov_matrix
+
+			# Generate the men gen capital 
 			Kstats_new = np.array([np.mean(elite_K), np.std(
 				elite_K), np.std(parameter_K_sorted)], dtype=np.float64)
-
-			mean_errors_all = np.abs(Kstats[0]-Kstats_new[0])
-
-			Kstats = eta_b*Kstats_new + (1-eta_b)*Kstats
+			Kstats = eta_b1*Kstats_new + (1-eta_b1)*Kstats
 
 			Sstats_new = np.array([np.mean(elite_S), np.std(
 				elite_S), np.std(parameter_S_sorted)], dtype=np.float64)
+			Sstats = eta_b1*Sstats_new + (1-eta_b1)*Sstats
 
-			Sstats = eta_b*Sstats_new + (1-eta_b)*Sstats
+			# Error in terms of max. mean difference between iteration of 
+			# capital stocks 
+			mean_errors_all = max(np.abs(Kstats[0]-Kstats_new[0]),\
+										 np.abs(Sstats[0]-Sstats_new[0]))
 
-			print('CE X-entropy iteration {}, mean gen cap {},\
-				mean stor cap {}, mean error {}'
-				  .format(i, Kstats[0], Sstats[0], mean_errors_all))
+			print('Rank {}, CE X-entropy iteration {}, mean gen cap {},\
+					 mean stor cap {}, mean error {}'
+				.format(color_layer_1, i, Kstats[0], Sstats[0], mean_errors_all))
 			print('Max covariance error is {}'.format(np.max(cov_matrix)))
 		else:
 			pass
 
+		# Broad cast means and covariance matrix from head of layer 1
 		layer_1_comm.Barrier()
 		layer_1_comm.Bcast(Kstats, root=0)
 		layer_1_comm.Bcast(Sstats, root=0)
 		layer_1_comm.Bcast(cov_matrix, root=0)
-
-		cov_matrix = np.diag(np.diag(cov_matrix))
-
 		mean_errors_all = layer_1_comm.bcast(mean_errors_all, root=0)
 
+		#cov_matrix = np.diag(np.diag(cov_matrix))
+
+		# Take new draw on each layer 1 node and clip 
 		draws = np.random.multivariate_normal(np.array([Kstats[0],
 														Sstats[0]]),
 											  cov_matrix)
 		K = min(max(K_bounds[0], draws[0]), K_bounds[1])
-		S = min(max(K_bounds[0], draws[1]), K_bounds[1])
+		S = min(max(s_bounds[0], draws[1]), s_bounds[1])
+		
+		# Error in terms of gen cap mean difference (mean_errors_all)
+		# or covariance matrix max 
 		#mean_errors = np.max(cov_matrix)
 		mean_errors = copy.copy(mean_errors_all)
-		
 		i += 1
 
 
 	# Once iteration complete, save results 
-
 	if layer_1_comm.rank == 0:
 
 		rho_star = TC_star(config.rho_global_old ,K, S, tol_TC, config.grid)
@@ -230,7 +240,7 @@ if __name__ == '__main__':
 		og.rho_star = rho_star
 		og.S_bar_star = S
 		og.solved_flag = 1 
-		og.grid = config.grid
+		og.grid = np.linspace(og.grid_min_s, S, og.grid_size)
 
 		Path("/scratch/kq62/{}/{}/".format(model_name,settings_file))\
 										.mkdir(parents=True, exist_ok=True)
