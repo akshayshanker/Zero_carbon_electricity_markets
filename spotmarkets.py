@@ -30,6 +30,7 @@ from helpfuncs.fixedpoint import fixed_point
 from sklearn.utils.extmath import cartesian
 from scipy.optimize import broyden1
 from scipy.stats import truncnorm
+from quantecon import tauchen
 from scipy.optimize import fsolve
 import time
 from scipy import stats
@@ -109,6 +110,7 @@ class EmarketModel:
                  TS_length = 1E7,
                  eta_demand=.5,
                  U = [],
+                 demand_shocks = []
                  ):
 
         # model parameters
@@ -212,8 +214,9 @@ class EmarketModel:
 
         # generate PMFs for supply and demand shocks
 
-        self.demand_shocks = np.genfromtxt(
-            'Settings/errors_demand.csv', delimiter=',')
+        #self.demand_shocks = np.genfromtxt(
+         #   'Settings/errors_demand.csv', delimiter=',')
+        self.demand_shocks = demand_shocks
 
         X_supply_prime = np.linspace(0, 1, self.grid_size_s + 1)
         self.P_supply = np.diff(
@@ -227,9 +230,14 @@ class EmarketModel:
         mean_prime = np.inner(self.X_supply, self.P_supply)
         self.X_supply = self.X_supply * (mu_supply / mean_prime)
 
-        self.P_dem, self.X_dem = np.histogram(
-            self.demand_shocks, bins=grid_size_d)
-        self.P_dem = self.P_dem / len(self.demand_shocks)
+        #self.P_dem, self.X_dem = np.histogram(
+        #    self.demand_shocks, bins=grid_size_d)
+        #self.P_dem = self.P_dem / len(self.demand_shocks)
+
+        ln_demand_sh = tauchen(0, s_demand,
+                              n=grid_size_d)
+
+        self.X_dem, self.P_dem  = ln_demand_sh.state_values, ln_demand_sh.P[0]
 
         # generate cartesian products of shocks
 
@@ -473,7 +481,8 @@ def time_operator_factory(og, parallel_flag=True):
                 np.array(grid))
         rho_updated = fixed_point(T,v_init, args = args,
                                   error_flag=0,
-                                  tol=1e-06,
+                                  tol=1e-03,
+                                  maxiter = 250,
                                   error_name = "pricing")
 
         return rho_updated
@@ -783,6 +792,6 @@ def time_operator_factory(og, parallel_flag=True):
         stor_pnl, rho_star = G(K, S, tol_TC, tol_pi)
         gen_pn = F(K, S, tol_TC, rho_star)
 
-        return np.sqrt(stor_pnl**2 + gen_pn**2)
+        return np.sqrt(stor_pnl**2 + gen_pn**2), rho_star
 
     return GF_RMSE, F_star, TC_star, G, F

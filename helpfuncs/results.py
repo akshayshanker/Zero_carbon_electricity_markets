@@ -21,10 +21,10 @@ Unpacks model policy functions and convets to timeseries results and plots
 """
 
 
-def  runres(model_name, sim_name,key, resolve, tol_pi, plot= True):
+def  runres(og, model_name, sim_name,key, resolve, tol_pi, plot= True):
 
 
-	og = pickle.load(open("/scratch/kq62/{}.mod".format(model_name  + '/' + sim_name + '/' + key),"rb"))
+	#og = pickle.load(open("/scratch/kq62/{}.mod".format(model_name  + '/' + sim_name + '/' + key),"rb"))
 	beta, delta_storage, zeta_storage       = og.beta, og.delta_storage, og.zeta_storage
 	pr, p_inv                				= og.pr, og.p_inv
 	grid_size, grid_min_s, grid_size_s, grid_size_d = og.grid_size, og.grid_min_s, og.grid_size_s, og.grid_size_d
@@ -45,7 +45,7 @@ def  runres(model_name, sim_name,key, resolve, tol_pi, plot= True):
 		"""
 		theta = 1/eta_demand
 
-		return (D_bar ** theta) * (np.exp(theta*e)) * (x**(1-theta))
+		return (D_bar ** theta) * (np.exp(theta*e)) * (x**(1-theta))/(1-theta)
 
 	K = og.K
 	S_bar = og.S_bar_star
@@ -88,12 +88,12 @@ def  runres(model_name, sim_name,key, resolve, tol_pi, plot= True):
 
 
 	for i in range(T):
-		z[i] = shock_X[shocks[i],0]
-		e[i] = shock_X[shocks[i],1]
-		price[i] = rho_func(shocks[i], s[i])
+		z[i] = shock_X[int(shocks[i]),0]
+		e[i] = shock_X[int(shocks[i]),1]
+		price[i] = rho_func(int(shocks[i]), s[i])
 		d[i] = og.p_inv(e[i],price[i], D_bar)
 		gen[i]= z[i]*og.K
-		integrand_k[i] = rho_func(shocks[i], s[i])*z[i]
+		integrand_k[i] = rho_func(int(shocks[i]), s[i])*z[i]
 
 
 		if i<T-1:
@@ -196,20 +196,20 @@ def  runres(model_name, sim_name,key, resolve, tol_pi, plot= True):
 	e, z = np.zeros(T),np.zeros(T)
 
 	shock_index = np.arange(len(shock_X))
-	shocks = np.random.choice(shock_index, T, p=P)
+	#shocks = np.random.choice(shock_index, T, p=P)
 	s[0] = S_bar
 
 	for i in range(T):
-		z[i] = shock_X[shocks[i],0]
-		e[i] = shock_X[shocks[i],1]
-		price[i] = rho_func(shocks[i], s[i])
+		z[i] = shock_X[int(shocks[i]),0]
+		e[i] = shock_X[int(shocks[i]),1]
+		price[i] = rho_func(int(shocks[i]), s[i])
 		d[i] = og.p_inv(e[i],price[i], D_bar)
 		gen[i]= z[i]*K
 
 		if i<T-1:
 			s[i+1] = nextstor(s[i], d[i], gen[i])
 
-	integrand[i] = rho_func(shocks[i], s[i])*z[i]
+	integrand[i] = rho_func(int(shocks[i]), s[i])*z[i]
 
 	if plot == True:
 		f, axarr = plt.subplots(2,2)

@@ -50,15 +50,23 @@ if __name__ == '__main__':
 
 	# load array of parameter values for each model 
 	settings_file = sys.argv[1]
-	array = genfromtxt('Settings/{}.csv'\
+	array = genfromtxt('Settings/ERCOT/{}.csv'\
 			.format(settings_file), delimiter=',')[1:]
-	model_name = 'main_v_2'
-	sim_name = sys.argv[2]
-	N = 384
-	N_elite = 9
 
-	U = pickle.load(open("/scratch/kq62/{}/seed_u.pkl"\
+	
+
+	model_name = 'ERCOT_main_v_1'
+	sim_name = sys.argv[2]
+	demand_name = sys.argv[3]
+	#N = 1536
+	#N = 6144
+	N = 384
+	N_elite = 20
+
+	U = pickle.load(open("{}/seed_u.pkl"\
 					.format(model_name),"rb"))
+
+	demand_shocks = np.genfromtxt('Settings/{}.csv'.format(demand_name), delimiter=',')
 	
 	# Now make the communicator classes 
 	# split len(array)*N cores across len(array) classes
@@ -75,7 +83,7 @@ if __name__ == '__main__':
 		print(parameters)
 		og = EmarketModel(s_supply = parameters[1], #variance deviation of supply 
 							mu_supply = parameters[0],
-							grid_size = 100, #grid size of storage grid
+							grid_size = 200, #grid size of storage grid
 							grid_max_x = 100, #initial max storge (redundant)
 							D_bar = parameters[6], #demand parameter D_bar
 							r_s = parameters[2]*1E9,#cost str cap (USD/GwH)
@@ -84,11 +92,22 @@ if __name__ == '__main__':
 							grid_size_d  = 5, #number of demand shocks
 							zeta_storage = parameters[4], # pipe constraint
 							eta_demand   = parameters[5], #demand elas.
-							U = U)
+							s_demand = parameters[8], 
+							U = U, demand_shocks = demand_shocks)
+		
+		#K_bounds = [parameters[9], parameters[8]]
+		#s_bounds = [parameters[11], parameters[10]]
+		K_bounds = [.1, 1000]
+		s_bounds = [.1, 2000]
+
 	else:
-		og = None 
+		og = None
+		K_bounds = None
+		s_bounds = None
 
 	og = layer_1_comm.bcast(og, root =0 )
+	K_bounds = layer_1_comm.bcast(K_bounds, root =0 )
+	s_bounds = layer_1_comm.bcast(s_bounds, root =0 )
 
 	# Import functions to generate first stage profits 
 	GF_RMSE, GF_star, TC_star, G, F  = time_operator_factory(og) 
@@ -109,15 +128,15 @@ if __name__ == '__main__':
 	#tol_K = 1e-4 #tol for value of eqm. K
 	# set initial stage to use first stage brent tol 
 	config.toggle_GF = 0 
-	tol_cp = 1e-2
+	tol_cp = 1e-3
 	max_iter_xe = 100
 	eta_b = 0.8
 
 	# Cross entropy method
 
 	# set bounds for draws on each cpu
-	K_bounds = [1E-10,500]
-	s_bounds = [1E-10,500]
+	#K_bounds = [parameters[9], parameters[8]]
+	#s_bounds = [0.5,500]
 
 	# Initialise empty variables
 	i = 0
@@ -129,13 +148,13 @@ if __name__ == '__main__':
 	S = np.random.uniform(s_bounds[0], s_bounds[1])
 
 	# Empty array to fill with next iter vals
-	Kstats = np.empty(3, dtype=np.float64)
-	Sstats = np.empty(3, dtype=np.float64)
+	Kstats = np.zeros(3, dtype=np.float64)
+	Sstats = np.zeros(3, dtype=np.float64)
 	cov_matrix = np.empty((2, 2), dtype=np.float64)
 
 	while mean_errors > tol_cp and i < max_iter_xe:
 		# Evaluate mean error
-		error = GF_RMSE(K,S,tol_TC,tol_pi)
+		error,rho_star = GF_RMSE(K,S,tol_TC,tol_pi)
 
 		if np.isnan(error):
 			error = 1e100
@@ -179,7 +198,7 @@ if __name__ == '__main__':
 
 			# Smooth of i> 0
 			if i == 0:
-				eta_b1 = 0
+				eta_b1 = 1
 			else:
 				eta_b1 = eta_b
 
@@ -191,19 +210,20 @@ if __name__ == '__main__':
 			# Generate the men gen capital 
 			Kstats_new = np.array([np.mean(elite_K), np.std(
 				elite_K), np.std(parameter_K_sorted)], dtype=np.float64)
-			Kstats = eta_b1*Kstats_new + (1-eta_b1)*Kstats
+			
 
 			Sstats_new = np.array([np.mean(elite_S), np.std(
 				elite_S), np.std(parameter_S_sorted)], dtype=np.float64)
-			Sstats = eta_b1*Sstats_new + (1-eta_b1)*Sstats
-
+			
 			# Error in terms of max. mean difference between iteration of 
 			# capital stocks 
 			mean_errors_all = max(np.abs(Kstats[0]-Kstats_new[0]),\
 										 np.abs(Sstats[0]-Sstats_new[0]))
 
-			print('Rank {}, CE X-entropy iteration {}, mean gen cap {},\
-					 mean stor cap {}, mean error {}'
+			Kstats = eta_b1*Kstats_new + (1-eta_b1)*Kstats
+			Sstats = eta_b1*Sstats_new + (1-eta_b1)*Sstats
+
+			print('Rank {}, CE X-entropy iteration {}, mean gen cap {},mean stor cap {}, mean error {}'
 				.format(color_layer_1, i, Kstats[0], Sstats[0], mean_errors_all))
 			print('Max covariance error is {}'.format(np.max(cov_matrix)))
 		else:
@@ -214,7 +234,7 @@ if __name__ == '__main__':
 		layer_1_comm.Bcast(Kstats, root=0)
 		layer_1_comm.Bcast(Sstats, root=0)
 		layer_1_comm.Bcast(cov_matrix, root=0)
-		mean_errors_all = layer_1_comm.bcast(mean_errors_all, root=0)
+		#mean_errors_all = layer_1_comm.Bcast(mean_errors_all, root=0)
 
 		#cov_matrix = np.diag(np.diag(cov_matrix))
 
@@ -227,28 +247,32 @@ if __name__ == '__main__':
 		
 		# Error in terms of gen cap mean difference (mean_errors_all)
 		# or covariance matrix max 
-		#mean_errors = np.max(cov_matrix)
-		mean_errors = copy.copy(mean_errors_all)
+		mean_errors = np.max(cov_matrix)
+		#mean_errors = copy.copy(mean_errors_all)
 		i += 1
 
 
 	# Once iteration complete, save results 
 	if layer_1_comm.rank == 0:
-
-		rho_star = TC_star(config.rho_global_old ,K, S, tol_TC, config.grid)
+		v_init = np.tile(np.ones(og.grid_size)*100, (og.grid_size_s*og.grid_size_d,1)) 
+		og.grid = np.linspace(og.grid_min_s, S, og.grid_size)
+		#rho_star = TC_star(og.rho_global_old ,K, S, tol_TC, og.grid)
 		og.K  = K
 		og.rho_star = rho_star
 		og.S_bar_star = S
 		og.solved_flag = 1 
-		og.grid = np.linspace(og.grid_min_s, S, og.grid_size)
+		
 
-		Path("/scratch/kq62/{}/{}/".format(model_name,settings_file))\
+		Path("/scratch/tp66/{}/{}/".format(model_name,settings_file))\
 										.mkdir(parents=True, exist_ok=True)
-		pickle.dump(og, open("/scratch/kq62/{}/{}/{}_{}_endog.mod"\
+		pickle.dump(og, open("/scratch/tp66/{}/{}/{}_{}_endog.mod"\
 								.format(model_name, settings_file,sim_name,\
 													color_layer_1),"wb"))
 		
+	world.Barrier()
 
+	if world_rank == 0:
+		print("All solved....")
 	#end             = time.time()
 	#og.time_exog    = end-start 
 
